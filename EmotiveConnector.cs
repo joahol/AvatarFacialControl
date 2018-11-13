@@ -39,34 +39,24 @@ public class EmotiveConnector : MonoBehaviour {
 
     // Use this for initialization and retrive auth, sessio, headset, 
    void Start() {
-        // System.Diagnostics.Process.Start("mozroots.exe", "--import");
-        System.Net.ServicePointManager.CertificatePolicy = new NoCheckCertificatePolicy();
+
+        System.Net.ServicePointManager.CertificatePolicy = new unsafeCertificatePolicy();
         tm = GameObject.FindObjectOfType<TextMesh>();// (typeof(Text));
         connect("wss://emotivcortex.com:54321"); //.ConfigureAwait(false);
 
-
-
-        //setSimulatorText("init");
         // getUserLogin();
         Task.Run(async () => { await Authorize(); }).Wait();
        
-        
-       // setSimulatorText("authorize");
       // Task queryHeadset();
         Task.Run(async () => { await queryHeadset(); }).Wait();
-        // setSimulatorText("query headset");
         // createSession();
         Task.Run(async () => { await createSession(); }).Wait();
-        setSimulatorText("create session");
+        //setSimulatorText("create session");
         Task.Run(async () => { await getSessions(); }).Wait();
-        Subscribe();
-        //setSimulatorText("subdcribe");
+       Subscribe();
+        
     }
-  public static  void setSimulatorText(String message) {
-       // tm.text = message;
-       // Debug.Log(message);
-    }
-	// Update is called once per frame
+
 	void Update () {
 		
 	}
@@ -75,7 +65,7 @@ public class EmotiveConnector : MonoBehaviour {
         {
             byte[] buffer = new byte[recieveChunckSize];
             var mstream = new MemoryStream();
-
+            ClientWebSocket webSocket = wsc;
 
                 while (webSocket.State == WebSocketState.Open)
                 {
@@ -92,57 +82,23 @@ public class EmotiveConnector : MonoBehaviour {
                         {
 
                             String resString = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                            setSimulatorText(resString);
+                    
 
                             if (result.EndOfMessage)
                             {
                                 JObject rj = JObject.Parse(resString);
                                 Console.WriteLine("Recieved:" + resString);
 
-
-
                                 if (rj["error"] != null)
                                 {
                                     Console.WriteLine("Error in request");
-                                    setSimulatorText("recieve: Error in request");
                                 }
                                 else
                                 {
                                     String queryVal = "";
-                                    if (rj["result"] != null)
+                                    if (rj["fac"] != null)
                                     {
-                                        setSimulatorText("Recieve: Result:..");
-                                        //dynamic resArr = rj["result"];
-                                        /*Dictionary<string, string> jreso = resArr.ToObject<Dictionary<string, string>>();
-                                        */
-
-                                        {
-                                            JObject res = (JObject)rj["result"];
-                                            var itm = res["_auth"].ToObject<String>();
-
-                                            lastMethod = "";
-                                            auth = itm;
-                                            Console.WriteLine(auth);
-                                        }
-                                        /*  if (rj.ContainsKey("id"))
-                                          {
-                                              //  userid = rj["id"].ToString();
-                                          }
-                                          */
-
-                                        if (lastMethod == "queryHeadsets")
-                                        {
-                                            JArray res = (JArray)rj["result"];
-                                            var itm = from c in res["id"].Values<string>()
-                                                      group c by c into g
-                                                      select new { idents = g.Key };
-                                            foreach (var id in itm)
-                                            {
-                                                Console.WriteLine(id.idents);
-                                                currentHeadset = id.idents;
-                                            }
-                                            lastMethod = "";
-                                        }
+                                        
 
                                     }
                                 }
@@ -258,7 +214,7 @@ public class EmotiveConnector : MonoBehaviour {
         try
         {
             wsc = new ClientWebSocket();
-            setSimulatorText("Connecting");
+         //   setSimulatorText("Connecting");
             wsc.ConnectAsync(new Uri(uri), CancellationToken.None).ConfigureAwait(true);
             Debug.Log("Connected" + wsc.State.ToString());
             //Wait for the websocket to change state into open
@@ -299,22 +255,7 @@ public class EmotiveConnector : MonoBehaviour {
             Debug.Log("Send: " + ee.ToString());
                 }
         }
-    /*
-        private static async Task Send(String sendString)
-        {
-        try
-        {
-            ArraySegment<byte> recievesegment = new ArraySegment<byte>();
-            byte[] buffer = encoder.GetBytes(sendString);
-            await wsc.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
-                WebSocketReceiveResult wsrr = await wsc.ReceiveAsync(recievesegment, CancellationToken.None) ;
-            sendString = null;
-            buffer = null;
-        }
-        catch (Exception esr) {
-            Debug.Log("SendString:"+esr.Message+"..."+esr.ToString()+"Send JSON: "+sendString); }
-        }
-        */
+   
         private static async Task Receive(ClientWebSocket webSocket)
         {
             byte[] buffer = new byte[recieveChunckSize];
@@ -338,7 +279,7 @@ public class EmotiveConnector : MonoBehaviour {
                         {
 
                             String resString = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        setSimulatorText(resString);
+                     //   setSimulatorText(resString);
 
                             if (result.EndOfMessage)
                             {
@@ -348,14 +289,14 @@ public class EmotiveConnector : MonoBehaviour {
 
 
                                 if (rj["error"] != null) { Console.WriteLine("Error in request");
-                                setSimulatorText("recieve: Error in request");
+                       //         setSimulatorText("recieve: Error in request");
                             }
                                 else
                                 {
                                     String queryVal = "";
                                     if (rj["result"] != null)
                                     {
-                                    setSimulatorText("Recieve: Result:..");
+                         //           setSimulatorText("Recieve: Result:..");
                                     //dynamic resArr = rj["result"];
                                     /*Dictionary<string, string> jreso = resArr.ToObject<Dictionary<string, string>>();
                                     */
@@ -502,22 +443,27 @@ private async Task Authorize()
         // return s;
     }
 
-    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
-    {
-        setSimulatorText("validate certificate " + certificate.ToString());
-        return true;
-    }
-    public bool MyRemoteCertificateValidationCallback(System.Object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
-    {
-        bool isOk = true;
-        setSimulatorText("MyRemote validate certificate " + certificate.ToString());
-        return isOk;
-    }
-
-
-
+    #region to be removed
+    /*
+       private static async Task Send(String sendString)
+       {
+       try
+       {
+           ArraySegment<byte> recievesegment = new ArraySegment<byte>();
+           byte[] buffer = encoder.GetBytes(sendString);
+           await wsc.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
+               WebSocketReceiveResult wsrr = await wsc.ReceiveAsync(recievesegment, CancellationToken.None) ;
+           sendString = null;
+           buffer = null;
+       }
+       catch (Exception esr) {
+           Debug.Log("SendString:"+esr.Message+"..."+esr.ToString()+"Send JSON: "+sendString); }
+       }
+       */
+    #endregion
 
 }
+#region JSon Structures for Emotive Cortex API.
 
 struct getLogin
     {
@@ -579,18 +525,39 @@ struct getLogin
         public String id;
 
     }
+#endregion
 
 
 
-
-class unsafeCertificatePolicy : System.Net.ICertificatePolicy
+#region Certificate handeling for mono
+class unsafeCertificatePolicy : ICertificatePolicy
 {
+    //We are ignoring the mono certificate requirement and always return true, this code should not be used in production
     public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
     {
         return true;
     }
-}
+    /* unused methods to be removed
+     public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
+    {
+        //setSimulatorText("validate certificate " + certificate.ToString());
+        return true;
+    }
+    public bool MyRemoteCertificateValidationCallback(System.Object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
+    {
+        bool isOk = true;
+       // setSimulatorText("MyRemote validate certificate " + certificate.ToString());
+        return isOk;
+    }
 
+
+
+     
+     */
+
+
+}
+#endregion
 
 
 
