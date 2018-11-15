@@ -16,8 +16,10 @@ using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Security;
 using System.Collections.Generic;
+using Assets.Scripts;
 
-public class EmotiveConnector : MonoBehaviour {
+
+public class EmotiveConnector : MonoBehaviour{
     public static TextMesh tm;
 
     private static object consoleLock = new object();
@@ -32,28 +34,31 @@ public class EmotiveConnector : MonoBehaviour {
     private static string id = "";
     private static string lastMethod = "";
     private static string currentHeadset = "";
-    
+    bool stop = false;
+    FaceExpressionUpdate faceAnimationUpdate;
     static UTF8Encoding encoder = new UTF8Encoding();
 
 
 
     // Use this for initialization and retrive auth, sessio, headset, 
    void Start() {
-
+        faceAnimationUpdate = (FaceExpressionUpdate)GetComponent(typeof(FaceExpressionUpdate));
         System.Net.ServicePointManager.CertificatePolicy = new unsafeCertificatePolicy();
-        tm = GameObject.FindObjectOfType<TextMesh>();// (typeof(Text));
-        connect("wss://emotivcortex.com:54321"); //.ConfigureAwait(false);
+        tm = GameObject.FindObjectOfType<TextMesh>();
+        connect("wss://emotivcortex.com:54321");
 
         // getUserLogin();
-        Task.Run(async () => { await Authorize(); }).Wait();
-       
-      // Task queryHeadset();
-        Task.Run(async () => { await queryHeadset(); }).Wait();
-        // createSession();
+        
+        Task.Run(async () => { await Authorize(); }).Wait();        //This step is required since you need the auth key
+        Task.Run(async () => { await queryHeadset(); }).Wait();     //
+        // createSession();                                         // Create session is only required when you need to create a new session 
         Task.Run(async () => { await createSession(); }).Wait();
-        setSimulatorText("create session");
-        Task.Run(async () => { await getSessions(); }).Wait();
-        Subscribe();
+        //setSimulatorText("create session");
+        Task.Run(async () => { await getSessions(); }).Wait();      //Only if you need to connect to a specific session
+        Task.Run(async () => { await Subscribe(); }).Wait();        //Send request to start a session
+        subscription();   //Listen to the active session
+        
+        
     }
 
 	void Update () {
@@ -64,9 +69,12 @@ public class EmotiveConnector : MonoBehaviour {
         {
             byte[] buffer = new byte[recieveChunckSize];
             var mstream = new MemoryStream();
+            if (wsc.State != WebSocketState.Open) {
+                connect("wss://emotivcortex.com:54321");
+            }
+            ClientWebSocket webSocket = wsc;
 
-
-                while (webSocket.State == WebSocketState.Open)
+                while (webSocket.State == WebSocketState.Open && stop != true)
                 {
 
                     Console.WriteLine("Recieve:");
@@ -81,8 +89,6 @@ public class EmotiveConnector : MonoBehaviour {
                         {
 
                             String resString = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    
-
                             if (result.EndOfMessage)
                             {
                                 JObject rj = JObject.Parse(resString);
@@ -91,33 +97,59 @@ public class EmotiveConnector : MonoBehaviour {
                                 if (rj["error"] != null)
                                 {
                                     Console.WriteLine("Error in request");
+                                break; //Probably nothing interesting in this response
                                 }
                                 else
                                 {
-                                    String queryVal = "";
                                     if (rj["fac"] != null)
                                     {
-                                        
-
+                                    JProperty jpres = null;
+                                  
+                                    foreach (JProperty jpr in rj.Properties())
+                                    {
+                                        if (jpr.Name == "result")
+                                        {
+                                            jpres = jpr;
+                                            break;
+                                        }
+                                        if (jpr.Name == "fac") {
+                                            if (jpr.HasValues) {
+                                            
+                                                JArray jaa = (JArray)jpr.Value;
+                                                FaceExpression expression = new FaceExpression();
+                                                expression.eyeExpression = (String)jaa[0];
+                                                expression.upperFaceExpression = (String)jaa[1];
+                                                expression.upperFaceExpressionPower = (float)jaa[2];
+                                                expression.lowerFaceExpression = (String)jaa[3];
+                                                expression.lowerFaceExpressionPower = (float)jaa[4];
+                                               faceAnimationUpdate.updateFaceExpression(expression);
+                                            }
+                                        }
                                     }
+                                }
                                 }
                             }
                             else
                             {
                                 Debug.LogError("Recieved: " + result.ToString());
                                 Console.WriteLine("Status: Recieved..:" + result.ToString());
-
                             }
                         }
                     }
+                Task.Delay(100);
                 }
             
           
         }
-        catch (Exception e) { }
+        catch (Exception e) {
+
+            Debug.Log("Subscribe error: " + e.ToString());
+    
+            }
+
     }
 
-    //Function to send and recieve. 
+    //Function to send and recieve while setting up a session with cortex api
     async Task SendRecieve(String JSonSendString) {
         // var jobs = new List<Task>();
         try
@@ -148,7 +180,7 @@ public class EmotiveConnector : MonoBehaviour {
         catch (Exception ea) {
             Debug.Log("SendRecieve:" +ea.Message+"...."+ea.StackTrace); }
     }
-
+    //Parser for Cortex initial setup
     void parseRecievedInitJson(String recieved)
     {
         JObject recievedObj = JObject.Parse(recieved);
@@ -206,22 +238,16 @@ public class EmotiveConnector : MonoBehaviour {
             }
         }
     }
-    // Setup a websocket 
-    //public static async Task connect(string uri)
+    // Setup a websocket to the host of Cortex 
     public void connect(string uri)
     {
         try
         {
             wsc = new ClientWebSocket();
-            setSimulatorText("Connecting");
             wsc.ConnectAsync(new Uri(uri), CancellationToken.None).ConfigureAwait(true);
             Debug.Log("Connected" + wsc.State.ToString());
-            //Wait for the websocket to change state into open
             while (wsc.State == WebSocketState.Connecting) { Task.Delay(100); }
-            //    { 
-            /*await*/
-            //Task.WhenAll(Receive(wsc), Send(wsc)).ConfigureAwait(true);
-            //  }
+            //Just wait until end 
         }
         catch (Exception e)
         {
@@ -254,22 +280,7 @@ public class EmotiveConnector : MonoBehaviour {
             Debug.Log("Send: " + ee.ToString());
                 }
         }
-    /*
-        private static async Task Send(String sendString)
-        {
-        try
-        {
-            ArraySegment<byte> recievesegment = new ArraySegment<byte>();
-            byte[] buffer = encoder.GetBytes(sendString);
-            await wsc.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
-                WebSocketReceiveResult wsrr = await wsc.ReceiveAsync(recievesegment, CancellationToken.None) ;
-            sendString = null;
-            buffer = null;
-        }
-        catch (Exception esr) {
-            Debug.Log("SendString:"+esr.Message+"..."+esr.ToString()+"Send JSON: "+sendString); }
-        }
-        */
+   
         private static async Task Receive(ClientWebSocket webSocket)
         {
             byte[] buffer = new byte[recieveChunckSize];
@@ -293,7 +304,7 @@ public class EmotiveConnector : MonoBehaviour {
                         {
 
                             String resString = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        setSimulatorText(resString);
+                     //   setSimulatorText(resString);
 
                             if (result.EndOfMessage)
                             {
@@ -303,18 +314,13 @@ public class EmotiveConnector : MonoBehaviour {
 
 
                                 if (rj["error"] != null) { Console.WriteLine("Error in request");
-                                setSimulatorText("recieve: Error in request");
+    
                             }
                                 else
                                 {
                                     String queryVal = "";
                                     if (rj["result"] != null)
                                     {
-                                    setSimulatorText("Recieve: Result:..");
-                                    //dynamic resArr = rj["result"];
-                                    /*Dictionary<string, string> jreso = resArr.ToObject<Dictionary<string, string>>();
-                                    */
-                                    
                                             {
                                                 JObject res = (JObject)rj["result"];
                                                 var itm = res["_auth"].ToObject<String>();
@@ -382,8 +388,8 @@ public class EmotiveConnector : MonoBehaviour {
         catch (Exception gulError) {
             Debug.Log("GetUserLogin: " + gulError.ToString() + "..." + gulError.Message); }
         }
-
-  private   async Task queryHeadset()
+ 
+    private   async Task queryHeadset()
         {
             queryHeadsets q = new queryHeadsets();
             q.jsonrpc = "2.0";
@@ -411,22 +417,17 @@ private async Task Authorize()
             Debug.Log("Authorze: " + galError.ToString() + "..." + galError.Message); }
         }
 
-       async void Subscribe()
+       async Task Subscribe()
         {
-  
             JObject se = new JObject();
             JObject param = new JObject(new JProperty("_auth", auth));
             JArray strea = new JArray("fac");
             param.Add("streams", strea);
             se.Add(new JProperty("id", "1"));
             se.Add("jsonrpc", "2.0");
-            //  se.Add(new JProperty("_auth", auth));
-            // se.Add(new JProperty("stream", "fac"));
             se.Add(new JProperty("method", "subscribe"));
             se.Add("params", param);
-
             String rJson = JsonConvert.SerializeObject(se);
-            Console.WriteLine("subscribe:" + rJson);
            await SendRecieve(rJson);
         }
        async  Task createSession()
@@ -457,95 +458,122 @@ private async Task Authorize()
         // return s;
     }
 
+#region to be removed
+    /*
+       private static async Task Send(String sendString)
+       {
+       try
+       {
+           ArraySegment<byte> recievesegment = new ArraySegment<byte>();
+           byte[] buffer = encoder.GetBytes(sendString);
+           await wsc.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
+               WebSocketReceiveResult wsrr = await wsc.ReceiveAsync(recievesegment, CancellationToken.None) ;
+           sendString = null;
+           buffer = null;
+       }
+       catch (Exception esr) {
+           Debug.Log("SendString:"+esr.Message+"..."+esr.ToString()+"Send JSON: "+sendString); }
+       }
+       */
+#endregion
+
+}
+
+#region Certificate handeling for mono
+class unsafeCertificatePolicy : ICertificatePolicy
+{
+    //We are ignoring the mono certificate requirement and always return true, this code should not be used in production
     public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
     {
-        setSimulatorText("validate certificate " + certificate.ToString());
+        return true;
+    }
+    /* unused methods to be removed
+     public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
+    {
+        //setSimulatorText("validate certificate " + certificate.ToString());
         return true;
     }
     public bool MyRemoteCertificateValidationCallback(System.Object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
     {
         bool isOk = true;
-        setSimulatorText("MyRemote validate certificate " + certificate.ToString());
+       // setSimulatorText("MyRemote validate certificate " + certificate.ToString());
         return isOk;
     }
 
 
 
+     
+     */
+
 
 }
+#endregion
 
-struct getLogin
-    {
-        public String jsonrpc;
-        public String method;
-        public String id;
-    }
-    struct getCurrentUserData
-    {
-        public String userid;
-        public String id;
-    }
-    struct userCredidentals
-    {
-        public String userid;
-        public String password;
-    }
-    struct userLogOut
-    {
-        public String userId;
-        public String id;
-        public String jsonrpc;
-        public String method;
-        public String[] @params;
-    }
-    struct Authorize
-    {
-        public String jsonrpc;
-        public String method;
-        public String[] @params;
-    }
-    struct queryHeadsets
-    {
-        public String jsonrpc;
-        public String method;
-        public String[] @params;
-        public String id;
-    }
-    struct AnonymousAuthorize
-    {
-        public String jsonrpc;
-        public String method;
-        public String[] @params;
-        public String id;
-    }
-    struct SubscribeToStream
-    {
-
-        public String jsonrpc;
-        public String method;
-        public String[] @params;//= new String[]{  _auth, streams };
-        public String id;
-
-    }
-    struct getSession
-    {
-        public String jsonrpc;
-        public String method;
-        public String id;
-
-    }
-
-
-
-
-class unsafeCertificatePolicy : System.Net.ICertificatePolicy
+#region JSon Structures for Emotive Cortex API.
+public struct FaceExpression
 {
-    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem)
-    {
-        return true;
-    }
+    public String eyeExpression;
+    public String upperFaceExpression;
+    public String lowerFaceExpression;
+    public float upperFaceExpressionPower;
+    public float lowerFaceExpressionPower;
+}
+struct getLogin
+{
+    public String jsonrpc;
+    public String method;
+    public String id;
+}
+struct getCurrentUserData
+{
+    public String userid;
+    public String id;
+}
+struct userCredidentals
+{
+    public String userid;
+    public String password;
+}
+struct userLogOut
+{
+    public String userId;
+    public String id;
+    public String jsonrpc;
+    public String method;
+    public String[] @params;
+}
+struct Authorize
+{
+    public String jsonrpc;
+    public String method;
+    public String[] @params;
+}
+struct queryHeadsets
+{
+    public String jsonrpc;
+    public String method;
+    public String[] @params;
+    public String id;
+}
+struct AnonymousAuthorize
+{
+    public String jsonrpc;
+    public String method;
+    public String[] @params;
+    public String id;
+}
+struct SubscribeToStream
+{
+    public String jsonrpc;
+    public String method;
+    public String[] @params;
+    public String id;
+}
+struct getSession
+{
+    public String jsonrpc;
+    public String method;
+    public String id;
 }
 
-
-
-
+#endregion
