@@ -458,24 +458,7 @@ private async Task Authorize()
         // return s;
     }
 
-#region to be removed
-    /*
-       private static async Task Send(String sendString)
-       {
-       try
-       {
-           ArraySegment<byte> recievesegment = new ArraySegment<byte>();
-           byte[] buffer = encoder.GetBytes(sendString);
-           await wsc.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
-               WebSocketReceiveResult wsrr = await wsc.ReceiveAsync(recievesegment, CancellationToken.None) ;
-           sendString = null;
-           buffer = null;
-       }
-       catch (Exception esr) {
-           Debug.Log("SendString:"+esr.Message+"..."+esr.ToString()+"Send JSON: "+sendString); }
-       }
-       */
-#endregion
+
 
 }
 
