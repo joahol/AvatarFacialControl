@@ -10,3 +10,4 @@ Just drag and drop to you HeadModel in Unity 3D.
 Additonal dependencies:
 NEWTONSOFT JSon. 
 
+FaceExpressions.cs file is not required. the structures in here are a duplicate. This file will be removed 
